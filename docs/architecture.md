@@ -43,7 +43,7 @@ task environment value. ALB and ECS health checks use `/healthz`, and the OIDC
 trust is constrained to the exact repository and protected environment. These
 are structural target checks, not cloud runtime evidence. The application and
 Compose images use verified multi-platform pinned base images, and hosted CI
-run `31580237125` verified the Linux validation, build, scan, and SBOM jobs.
+run `31583275274` verified the Linux validation, build, scan, and SBOM jobs.
 
 ## Decisions and trade-offs
 
@@ -67,6 +67,6 @@ Future:  reviewed digest → protected OIDC promotion → cloud smoke/rollback
 
 No cloud resource is created by the current repository state. Terraform
 formatting, structural checks, and provider validation are verified locally and
-in hosted run `31580237125`; cloud behavior and the future OIDC promotion remain
+in hosted run `31583275274`; cloud behavior and the future OIDC promotion remain
 unverified. See the ADRs for network/NAT, Aurora, OIDC, destroy safety, and
 observability decisions.
