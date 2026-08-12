@@ -1,0 +1,11 @@
+title = "Secure URL Shortener Gitleaks policy"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Historical local-only fixture in documentation examples"
+paths = ['''^README\.md$''', '''^docs/operations/local-start\.md$''']
+rules = ["curl-auth-header"]
+regexTarget = "match"
+regexes = ['''authorization:\s*Bearer\s+local-owner-token''']

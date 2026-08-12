@@ -1,6 +1,8 @@
+# Intentional public HTTPS ingress protected by WAF; ECS tasks and Aurora remain
+# private. The scoped Trivy ignore is attached to the public attribute below.
 resource "aws_lb" "app" {
   name                       = substr(local.name, 0, 32)
-  internal                   = false
+  internal                   = false # trivy:ignore:AVD-AWS-0053
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
   subnets                    = [for subnet in aws_subnet.public : subnet.id]

@@ -25,8 +25,9 @@ responses are:
 ## Exercise the current local path
 
 ```sh
+export OWNER_TOKEN=local-owner-token
 curl --fail -X POST http://localhost:8000/v1/links \
-  -H 'authorization: Bearer local-owner-token' \
+  -H "authorization: Bearer ${OWNER_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"destination":"https://example.com/architecture","code":"arch-1"}'
 curl --include --max-redirs 0 http://localhost:8000/r/arch-1

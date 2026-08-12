@@ -33,7 +33,7 @@ jobs:
           docker run --rm
           --volume "${GITHUB_WORKSPACE}:/repo:ro"
           "${GITLEAKS_IMAGE}"
-          detect --source=/repo --no-banner --redact --exit-code=1
+          detect --source=/repo --config=/repo/.gitleaks.toml --no-banner --redact --exit-code=1
 
   python:
     name: Python quality and contract tests

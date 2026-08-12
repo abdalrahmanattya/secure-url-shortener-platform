@@ -88,8 +88,9 @@ any shared or cloud environment.
 Create a link:
 
 ```sh
+export OWNER_TOKEN=local-owner-token
 curl --fail -X POST http://localhost:8000/v1/links \
-  -H 'authorization: Bearer local-owner-token' \
+  -H "authorization: Bearer ${OWNER_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"destination":"https://example.com/docs","code":"docs-1"}'
 ```
@@ -104,18 +105,18 @@ Read link metadata as its owner:
 
 ```sh
 curl --fail http://localhost:8000/v1/links/docs-1 \
-  -H 'authorization: Bearer local-owner-token'
+  -H "authorization: Bearer ${OWNER_TOKEN}"
 ```
 
 Disable or delete a link as its owner:
 
 ```sh
 curl --fail -X PATCH http://localhost:8000/v1/links/docs-1 \
-  -H 'authorization: Bearer local-owner-token' \
+  -H "authorization: Bearer ${OWNER_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"enabled":false}'
 curl --fail -X DELETE http://localhost:8000/v1/links/docs-1 \
-  -H 'authorization: Bearer local-owner-token'
+  -H "authorization: Bearer ${OWNER_TOKEN}"
 ```
 
 An active link resolves with `302` and `Cache-Control: no-store`. Unknown codes
