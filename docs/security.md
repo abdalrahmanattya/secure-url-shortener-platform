@@ -19,19 +19,19 @@
   headers or database values.
 
 These are local implementation observations, not a production security
-certification. The local UI is create-only and requires an owner token, but its
-form endpoint has no dedicated CSRF or rate-limit control and must remain
-local-only until addressed. Cloud WAF, identity, secret wiring, and
-operational controls remain target design rather than deployed evidence.
-
-The bearer contract also requires explicit scheme enforcement; this is a
-remaining application hardening gate before publication.
+certification. The local UI is create-only, requires an owner token, validates a
+same-origin `Origin` when supplied, and has separate creation and failed-auth
+rate-limit buckets. It remains a local demonstration surface; deployment-level
+CSRF, abuse measurement, and distributed rate limiting are not claimed. The
+Bearer scheme is explicitly enforced before token comparison. Cloud WAF,
+identity, secret wiring, and operational controls remain target design rather
+than deployed evidence.
 
 ## Target controls
 
 - Public traffic must terminate at an HTTPS ALB/WAF; without an approved ACM
-  certificate the target intentionally returns `503` rather than serving HTTP
-  application traffic. ECS and Aurora remain private.
+  certificate the Terraform apply cannot complete. HTTP redirects to HTTPS and
+  ECS/Aurora remain private.
 - WAF rate controls and application limits protect creation, resolution, and
   management paths.
 - Secrets Manager owns runtime secrets; ECR publishes scanned immutable digests.
@@ -46,9 +46,9 @@ remaining application hardening gate before publication.
 - Logs redact tokens, authorization headers, full destinations, and database
   values; request IDs remain available for diagnosis.
 
-The target ECS task provides the application’s `DATABASE_URL`, `ENVIRONMENT`,
-`OWNER_TOKENS`, and `ADMIN_TOKENS` contract from Secrets Manager in Terraform.
-This is static target evidence, not cloud-verified runtime behavior.
+The target ECS task receives `DATABASE_URL`, `OWNER_TOKENS`, and `ADMIN_TOKENS`
+from Secrets Manager in Terraform; `ENVIRONMENT` is a normal task environment
+value. This is static target evidence, not cloud-verified runtime behavior.
 
 ## Abuse cases
 

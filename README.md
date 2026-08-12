@@ -1,91 +1,130 @@
 # Secure URL Shortener Platform
 
-An original, local-first URL-shortening service with a deliberately visible
-path from application code to secure AWS delivery.
+An original, local-first URL-shortening service that demonstrates secure
+application boundaries and a reviewable AWS delivery design. It is intended
+for cloud/platform engineers, security reviewers, and recruiters assessing
+architecture, implementation discipline, and operational thinking.
 
-**Status:** v0.1.0 candidate — local application implementation and Terraform
-validation verified. **Deployment:** not deployed. **Data:** no production data.
-**Credentials:** no cloud credentials required for local work.
+**Status:** private v0.1.0 candidate. The local service, Compose/PostgreSQL
+lifecycle, Terraform validation, pinned multi-platform images, and CI evidence
+are complete. AWS has not been applied, no public endpoint exists, and no
+production data or credentials are present.
 
-This is a portfolio engineering case study for cloud architects, platform
-engineers, and security reviewers. It demonstrates how a small product can
-make security boundaries, operational decisions, and evidence quality visible.
+## What the service does
 
-## Why this project exists
+An authorized owner creates a short code for a validated HTTP(S) destination.
+Anyone with the code can resolve it through a `302` redirect. Owners and
+administrators can inspect, disable, re-enable, expire, or tombstone links.
+The service never fetches the destination server-side.
 
-A URL shortener looks simple until its boundaries are made explicit. It needs
-to validate destinations without becoming an SSRF helper, protect management
-operations, preserve link lifecycle state, survive database and deployment
-failures, and expose enough telemetry to operate safely.
+The lifecycle is deliberate: unknown codes return `404`; disabled, expired,
+and deleted codes return `410`; deleted codes remain tombstoned and can never
+be reused. Click count and last-access time are recorded without storing client
+IP addresses or user agents.
 
-The implementation starts locally with FastAPI, SQLAlchemy, Alembic, and
-PostgreSQL. The target AWS design places an HTTPS ALB and WAF in front of
-private ECS Fargate tasks, with Aurora PostgreSQL Serverless v2, Secrets
-Manager, ECR, and CloudWatch behind clear IAM and network boundaries.
+## Implemented capabilities
 
-## What is implemented locally
+- FastAPI application with server-rendered accessible HTML creation form.
+- PostgreSQL 16 persistence through SQLAlchemy async and Alembic.
+- Optional custom aliases, cryptographically random aliases, expiry, disable,
+  tombstone deletion, ownership, and administrator management.
+- HTTP/HTTPS-only destination validation, 2,048-character URL limit, DNS
+  resolution, and rejection of private, loopback, link-local, unspecified,
+  metadata, and other non-global addresses.
+- Constant-time bearer-token checks, owner scoping, request IDs, structured
+  JSON logs with destination/credential redaction, and safe error envelopes.
+- Local bounded rate limiting with `Retry-After`; the UI additionally uses
+  same-origin `Origin` validation and separate creation/failed-auth buckets.
+- `/healthz`, `/readyz`, authenticated `/internal/metrics`, and a non-root,
+  read-only-capable container.
 
-- FastAPI service with a small HTML interface.
-- PostgreSQL 16 through Docker Compose.
-- Alembic migration for the initial links table.
-- HTTP/HTTPS destination validation with local/private address rejection.
-- Authenticated owner/admin management using clearly local-only bearer
-  fixtures in Compose.
-- Versioned `/v1` management routes, owner scoping, error envelopes, request
-  IDs, tombstone deletion, and `410` lifecycle responses.
-- Public `302` resolution with `Cache-Control: no-store` and a local in-memory
-  rate limit.
-- Redirect click count and last-accessed metadata.
-- Non-root application container with a defined container health-check intent.
-- Disposable reset tooling for development; the seed helper remains a follow-up
-  item until its current service-call signature is corrected.
-- Contract, API, validation, and infrastructure-structure checks.
+## Local architecture and flows
 
-The current executable route surface is documented in
-[`docs/portfolio/api-surface.md`](docs/portfolio/api-surface.md) and described
-by the OpenAPI contract in [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
-The application is locally verified; the AWS design remains non-applied and
-not deployed.
+```mermaid
+flowchart LR
+    Client[Browser or curl] --> API[FastAPI service]
+    API --> Management[Management routes\nGET/POST/PATCH/DELETE]
+    Management --> Auth[Owner/admin auth + rate limit]
+    Auth --> Validate[URL/DNS validation]
+    Validate --> Store[(PostgreSQL 16)]
+    API --> Resolver[Resolver route\nGET /r/{code}]
+    Resolver --> ResolveLimit[Resolver rate limit]
+    ResolveLimit --> Lookup[PostgreSQL code lookup]
+    Lookup --> Store
+    Store --> Decision{Lifecycle decision}
+    Decision -->|active| Click[Click metadata update]
+    Click --> Store
+    Store --> Redirect[302 + Location + no-store]
+    Decision -->|unknown| NotFound[404]
+    Decision -->|disabled, expired, deleted| Gone[410]
+    Migrate[Alembic migrate service] --> Store
+    Seed[Local seed helper] --> Store
+    API --> Health["/healthz · /readyz · /internal/metrics"]
+```
 
-## Run it locally
+Create flow: the API authenticates the caller, validates the destination and
+optional alias, writes the link, and returns `201` with a `Location` header.
+Resolve flow: the API looks up the code, applies lifecycle rules, increments
+safe click metadata, and returns `302` without contacting the destination.
+
+## Run locally
 
 Prerequisites: Docker Desktop and Python 3.13 or newer.
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install --requirement requirements.lock
+python -m pip install --no-deps --editable .
 docker compose up --build -d
 curl --fail http://localhost:8000/healthz
 curl --fail http://localhost:8000/readyz
 ```
 
-The Compose database uses disposable local values only. Do not copy them into
-an AWS environment or commit a `.env` file. Compose runs the separate
-`migrate` service (`alembic upgrade head`) and starts `app` only after the
-migration completes. To inspect startup:
+Compose starts PostgreSQL, runs the separate Alembic `migrate` service, then
+starts the application. The images and database use pinned, disposable local
+fixtures. They must not be reused in shared or cloud environments.
+
+Useful commands:
 
 ```sh
 docker compose logs -f app
-```
-
-To stop without deleting the local database volume:
-
-```sh
+docker compose exec -T app python scripts/seed.py
+python -m pytest -q
+python -m pytest --cov=src/secure_shortener --cov-report=term-missing --cov-fail-under=75
 docker compose down
 ```
 
-For a destructive disposable reset, follow
-[`docs/operations/reset.md`](docs/operations/reset.md).
+The seed helper creates deterministic example codes; reset the disposable
+database before running it again to avoid uniqueness collisions.
 
-## Current local API
+For a destructive disposable database reset, use
+[docs/operations/reset.md](docs/operations/reset.md). The local start and
+recovery procedures are in [docs/operations/local-start.md](docs/operations/local-start.md),
+[docs/operations/backup-restore.md](docs/operations/backup-restore.md), and
+[docs/operations/rollback.md](docs/operations/rollback.md).
 
-The following examples describe the code that is currently runnable locally.
-Compose maps `owner-demo` to `local-owner-token` and `admin` to
-`local-admin-token-change-me`; these fixtures are intentionally unsuitable for
-any shared or cloud environment.
+## API at a glance
 
-Create a link:
+The canonical contract is [docs/api/openapi.yaml](docs/api/openapi.yaml).
+Management routes require an owner or administrator bearer identity; the
+public resolver and health endpoints do not.
+
+| Method | Route | Auth | Success and lifecycle semantics |
+|---|---|---|---|
+| `GET` | `/healthz` | None | `200` liveness |
+| `GET` | `/readyz` | None | `200` when PostgreSQL is ready; `503` otherwise |
+| `POST` | `/v1/links` | Owner/admin | `201`, JSON body, `Location: /r/{code}` |
+| `GET` | `/v1/links/{code}` | Owner/admin | `200`; `404` unknown; `410` inactive |
+| `PATCH` | `/v1/links/{code}` | Owner/admin | `200`; `409` invalid transition; `410` expired/deleted |
+| `DELETE` | `/v1/links/{code}` | Owner/admin | `204`; tombstone, no code reuse |
+| `GET` | `/r/{code}` | None | `302` with `Location` and `Cache-Control: no-store` |
+| `GET` | `/internal/metrics` | Owner/admin | `200` plain-text process counters |
+
+The local demonstration UI serves `GET /` and posts to `/ui/links`; it uses
+the same owner token but is separate from the canonical JSON API.
+
+Example API use with the disposable Compose fixture (local development only):
 
 ```sh
 export OWNER_TOKEN=local-owner-token
@@ -93,118 +132,129 @@ curl --fail -X POST http://localhost:8000/v1/links \
   -H "authorization: Bearer ${OWNER_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"destination":"https://example.com/docs","code":"docs-1"}'
-```
-
-Resolve it without following the redirect:
-
-```sh
 curl --include --max-redirs 0 http://localhost:8000/r/docs-1
-```
-
-Read link metadata as its owner:
-
-```sh
 curl --fail http://localhost:8000/v1/links/docs-1 \
   -H "authorization: Bearer ${OWNER_TOKEN}"
 ```
 
-Disable or delete a link as its owner:
+The Compose fixture maps `owner-demo` to `local-owner-token` and `admin` to a
+separate local administrator fixture. These values are for disposable local
+development only. Configuration names and environment boundaries are described
+in [docs/security.md](docs/security.md).
 
-```sh
-curl --fail -X PATCH http://localhost:8000/v1/links/docs-1 \
-  -H "authorization: Bearer ${OWNER_TOKEN}" \
-  -H 'content-type: application/json' \
-  -d '{"enabled":false}'
-curl --fail -X DELETE http://localhost:8000/v1/links/docs-1 \
-  -H "authorization: Bearer ${OWNER_TOKEN}"
+## AWS target design (not applied)
+
+Terraform describes a target, not a deployed environment. The intended request
+path is optional DNS to a public ALB with WAF associated to the ALB and an ACM
+certificate attached to its HTTPS listener, then to private ECS tasks across
+two Availability Zones. ECS reads application
+and database settings from Secrets Manager, pulls an immutable image from ECR,
+and connects to isolated Aurora PostgreSQL. CloudWatch receives logs, metrics,
+alarms, and dashboards; KMS protects selected data and logs. VPC interface
+endpoints, an S3 gateway endpoint, and VPC DNS support private service access.
+
+```mermaid
+flowchart TB
+    subgraph Internet[Internet and optional DNS]
+        User[Internet client] --> DNS[Optional Route 53 DNS]
+    end
+    subgraph VPC[VPC across AZ-a and AZ-b]
+        subgraph Edge[Public subnets]
+            ALB[Public ALB\nHTTP redirects to HTTPS]
+        end
+        subgraph Private[Private subnets]
+            ECS[ECS Service\ndesired count 2; placement eligible in both private subnets]
+        end
+        subgraph Data[Isolated subnets]
+            Aurora[(Aurora PostgreSQL Serverless v2)]
+        end
+        VPCE[VPC interface endpoints:\nECR API/DKR, Logs, Secrets, KMS, STS]
+        S3[S3 gateway endpoint]
+        DNSVPC[VPC DNS]
+        NAT[NAT disabled by default; opt-in target]
+    end
+    WAF[AWS WAF] -. protects .-> ALB
+    ACM[ACM certificate] -. attached to HTTPS listener .-> ALB
+    DNS --> ALB
+    ALB -->|SG: TCP 8000| ECS
+    ECS -->|SG: TCP 5432| Aurora
+    Secrets[Secrets Manager JSON keys] -->|injected into tasks| ECS
+    ECR[Immutable ECR image digest] --> ECS
+    ECS --> CW[CloudWatch logs metrics alarms]
+    KMS[KMS key] -. encrypts selected Secrets Manager data .-> Secrets
+    KMS -. encrypts selected CloudWatch data .-> CW
+    ECS --> VPCE
+    ECS --> S3
+    ECS --> DNSVPC
+    Private -. optional egress .-> NAT
 ```
 
-An active link resolves with `302` and `Cache-Control: no-store`. Unknown codes
-return `404`; disabled, expired, and tombstoned codes return `410`. Management
-requires an owner or administrator bearer identity, and deleting a link keeps a
-tombstone so its code cannot be reused. Management and resolver rate limits
-return `429` with `Retry-After` when exceeded.
+Security groups express ALB-to-ECS, ECS-to-Aurora, and ECS-to-endpoint
+boundaries. The ECS service has desired count 2 and can place tasks across the
+two private AZ subnets; this does not guarantee one task in each AZ. Tasks and
+Aurora are private; only the ALB is internet-facing. No
+Terraform apply, ACM certificate provisioning, image publication, DNS change,
+or AWS smoke test has occurred.
 
-## Engineering story
+## Delivery and identity boundary
 
-```text
-validated destination
-        │
-        ▼
-FastAPI service ── SQLAlchemy/Alembic ── PostgreSQL
-        │
-        ├── health/readiness + structured request log
-        ├── local contract/API/security checks
-        └── immutable image → reviewed AWS target (not deployed)
+```mermaid
+flowchart LR
+    Dev[Developer push or pull request] --> CI[Current GitHub Actions CI]
+    CI --> Quality[Format, lint, tests, coverage]
+    CI --> Integration[PostgreSQL migration/readiness]
+    CI --> Policy[Terraform policy and config scan]
+    CI --> Image[Build, runtime smoke, Trivy scan, SBOM upload]
+    Manual[Current manual contract validation:\nimmutable digest + protected variables] --> Review[Separate approval boundary]
+    FutureOIDC[Future OIDC assume-role] -. unimplemented .-> Publish[Future image publish/promote]
+    Publish -. unimplemented .-> AWS[AWS target: ECR / ECS / ALB]
+    Quality --> Evidence[Evidence retained in CI]
+    Integration --> Evidence
+    Policy --> Evidence
+    Image --> Evidence
 ```
 
-Detailed diagrams are in [`docs/diagrams/`](docs/diagrams/) and the decisions
-behind the target are recorded in [`docs/decisions/`](docs/decisions/).
+Current CI builds and scans the repository, runs PostgreSQL integration, and
+uploads an SBOM. Manual contract validation is separate. OIDC assume-role,
+image publication/promotion, and AWS deployment are future unimplemented
+flows; no protected deployment job currently exists.
 
-## Security and operations
+## Evidence and limitations
 
-- [Security boundaries](docs/security.md)
-- [Misuse and abuse threat model](docs/threat-model.md)
-- [Local start](docs/operations/local-start.md)
-- [Backup and restore](docs/operations/backup-restore.md)
-- [Incident response](docs/operations/incident-response.md)
-- [Rollback](docs/operations/rollback.md)
-- [Evidence matrix](docs/evidence/evidence-matrix.md)
+Hosted CI run [31580237125](https://github.com/abdalrahmanattya/secure-url-shortener-platform/actions/runs/31580237125)
+passed all five jobs: Python quality/contract tests, PostgreSQL integration,
+workflow hygiene/Gitleaks, Terraform policy/Trivy configuration scan, and
+container build/runtime/vulnerability scan/SBOM upload. Local evidence also
+records `15 passed, 2 skipped`, `77%` coverage, Compose seed/lifecycle success,
+Terraform validation, and zero HIGH/CRITICAL runtime vulnerabilities.
 
-No statement in this repository should be read as an uptime, cost, account,
-performance, or production claim unless the evidence matrix labels it `cloud
-verified` and links to a retained measurement.
-
-## Publication-readiness snapshot
-
-| Check | Current evidence |
-|---|---|
-| Specification documentation checks | Locally verified: 4 passed; 2 optional service checks skipped |
-| Infrastructure structural checks | Locally verified: passed |
-| Full application/API suite | Locally verified: 15 passed; 2 skipped |
-| Terraform formatting and structural checks | Locally verified |
-| Terraform provider validation | Locally verified |
-| Workflow syntax and action pins | Locally verified |
-| Docker build, runtime smoke, and vulnerability scan | Locally verified; Trivy reports 0 HIGH/CRITICAL |
-| SBOM publication | GitHub-hosted CI evidence remains pending |
-| AWS secret/environment wiring, HTTPS, health checks, and environment-only OIDC | Statically validated target design; not deployed |
-| Explicit Bearer scheme enforcement | Locally verified; non-Bearer schemes are rejected before token comparison |
-| AWS deployment | Not deployed |
-
-The local API is suitable for review, but the repository is not yet ready for
-cloud publication. The ECS environment/secret contract, HTTPS-only listener,
-`/healthz` checks, and environment-only OIDC trust are now represented in the
-Terraform target and covered by structural checks; they still require Linux
-provider validation and cloud verification. The remaining repository gates are
-GitHub-hosted CI/SBOM evidence and cloud verification remain separate gates. The
-local UI has same-origin Origin validation plus distinct creation and failed-auth
-rate limits; these controls still need deployment-level abuse measurements.
-
-See [`CHANGELOG.md`](CHANGELOG.md) for the candidate release boundary and
-[`docs/evidence/evidence-matrix.md`](docs/evidence/evidence-matrix.md) for the
-full distinction between locally verified, statically validated, and not
-deployed evidence.
+This project does not claim uptime, throughput, cost, production readiness,
+content moderation, malware scanning, enterprise identity, or anonymous abuse
+elimination. Distributed rate limiting, WAF tuning, backup/restore exercises,
+cloud identity wiring, and AWS behavior require an approved measured
+environment. See the [evidence matrix](docs/evidence/evidence-matrix.md) and
+[threat model](docs/threat-model.md).
 
 ## Project map
 
 ```text
-src/secure_shortener/     FastAPI application, validation, persistence
-migrations/               Alembic schema history
-templates/ static/        Local demonstration UI
-tests/                    API, validation, specification, infrastructure checks
-infra/                    Non-applied Terraform AWS target
-docs/api/                 OpenAPI API contract
-docs/diagrams/            Local, AWS, delivery, and identity diagrams
-docs/operations/           Recovery and operating runbooks
+src/secure_shortener/  FastAPI application, validation, persistence, logging
+migrations/            Alembic schema history
+templates/ static/     Local demonstration UI and styles
+tests/                 API, validation, contract, and infrastructure checks
+infra/                 Non-applied AWS Terraform target
+scripts/               Seed, reset, workflow, and infrastructure checks
+docs/api/              OpenAPI and API decisions
+docs/operations/       Local start, recovery, incident, and rollback runbooks
 ```
 
-## Safety boundary
+Further reading: [architecture](docs/architecture.md), [requirements](docs/requirements.md),
+[security](docs/security.md), [development](docs/development.md), and the
+[change log](CHANGELOG.md).
+
+## Safety boundary and license
 
 AWS changes, credentials, state backends, image publication, deployment,
 rollback, and destroy operations require separate approval. No historical
-application code, credentials, generated state, or deployment workflow is
-used by this project.
-
-## License
-
-Released under the [MIT License](LICENSE).
+application code, credentials, generated state, or deployment workflow was
+imported. Released under the [MIT License](LICENSE).

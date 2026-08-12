@@ -33,6 +33,8 @@ This is a local candidate release, not a deployed release.
 
 ### Next gate
 
-Add retained PostgreSQL migration/API evidence, exercise local recovery, and
+Hosted GitHub Actions run `31580237125` verified the five CI jobs, including
+PostgreSQL integration, Gitleaks, Terraform/Trivy checks, container scanning,
+and SBOM upload. Exercise local recovery as useful operational evidence, then
 complete the separately approved cloud proof before calling the service
-production-ready. GitHub-hosted CI/SBOM evidence remains unverified locally.
+production-ready.

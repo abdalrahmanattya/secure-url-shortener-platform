@@ -1,28 +1,22 @@
 # Delivery and identity boundaries
 
-Status: design evidence only; no cloud deployment has been performed.
+Status: hosted CI is verified by run `31580237125`; AWS deployment remains
+unimplemented and has not been performed.
 
 ```mermaid
-sequenceDiagram
-    participant Dev as Engineer
-    participant GH as GitHub Actions
-    participant OIDC as GitHub OIDC
-    participant STS as AWS STS
-    participant ECR as ECR
-    participant ECS as ECS service
-    participant CW as CloudWatch
-
-    Dev->>GH: Pull request and reviewed change
-    GH->>GH: Test, lint, scan, build digest
-    GH->>OIDC: Request short-lived identity
-    OIDC-->>STS: Repository/ref/environment claims
-    STS-->>GH: Scoped deployment credentials
-    GH->>ECR: Push immutable image digest
-    GH->>ECS: Reviewed promotion to digest
-    ECS->>CW: Structured logs and metrics
-    ECS-->>GH: Deployment health and rollback signal
+flowchart LR
+    Dev[Developer push or pull request] --> GH[GitHub Actions CI]
+    GH --> Checks[Tests, PostgreSQL integration, policy scans]
+    GH --> Image[Container smoke, Trivy scan, SBOM upload]
+    Checks --> Evidence[Retained CI evidence]
+    Image --> Evidence
+    Contract[Manual future release contract] -. validates only .-> Environment[Protected environment]
+    Environment -. future OIDC assumption, not implemented .-> AWS[AWS ECR/ECS promotion]
 ```
 
-The application task role, ECS execution role, deployment role, and read-only
-review role are separate target identities. The service does not issue bearer
-tokens; it validates identity supplied by an external or local fixture issuer.
+The current CI workflow does not request AWS OIDC credentials, push to ECR, or
+update ECS. The dispatchable release workflow is contract-only: it validates an
+immutable image digest and protected environment variables. The target design
+separates application task, ECS execution, and future deployment identities; the
+service does not issue bearer tokens and validates identity supplied by an
+external or local fixture issuer.
