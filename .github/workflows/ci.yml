@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13.9"
+  TRIVY_IMAGE: "aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7" # 0.58.1 multi-platform index
+  GITLEAKS_IMAGE: "ghcr.io/gitleaks/gitleaks@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055" # 8.24.2
+
+jobs:
+  workflow-hygiene:
+    name: Workflow hygiene
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Validate workflow syntax and action pins
+        run: scripts/ci/validate-workflows.sh
+      - name: Scan repository history for secrets
+        run: >-
+          docker run --rm
+          --volume "${GITHUB_WORKSPACE}:/repo:ro"
+          "${GITLEAKS_IMAGE}"
+          detect --source=/repo --no-banner --redact --exit-code=1
+
+  python:
+    name: Python quality and contract tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --requirement requirements.lock
+          python -m pip install --no-deps --editable .
+      - name: Check formatting
+        run: python -m ruff format --check src tests
+      - name: Check lint
+        run: python -m ruff check src tests
+      - name: Run unit, API, and contract tests with coverage gate
+        run: >-
+          python -m pytest
+          --cov=src/secure_shortener
+          --cov-report=term-missing
+          --cov-fail-under=75
+
+  postgres-integration:
+    name: PostgreSQL migration and readiness integration
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777 # 16-alpine
+        env:
+          POSTGRES_DB: shortener
+          POSTGRES_USER: shortener
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortener -d shortener"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://shortener:ci-only-password@localhost:5432/shortener
+      ENVIRONMENT: ci
+      OWNER_TOKENS: owner-ci:ci-owner-token
+      ADMIN_TOKENS: admin:ci-admin-token
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install locked application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --requirement requirements.lock
+          python -m pip install --no-deps --editable .
+      - name: Apply and verify migrations
+        run: |
+          python -m alembic upgrade head
+          python -m alembic current
+      - name: Start the application
+        run: |
+          python -m uvicorn secure_shortener.main:app --host 127.0.0.1 --port 8000 > /tmp/shortener.log 2>&1 &
+          echo $! > /tmp/shortener.pid
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:8000/healthz && break
+            sleep 1
+          done
+      - name: Exercise liveness and database readiness
+        run: |
+          curl --fail --silent http://127.0.0.1:8000/healthz
+          curl --fail --silent http://127.0.0.1:8000/readyz
+      - name: Stop the application
+        if: always()
+        run: kill "$(cat /tmp/shortener.pid)" 2>/dev/null || true
+
+  infrastructure:
+    name: Terraform and infrastructure policy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.15.8
+      - name: Validate Terraform without backend or AWS credentials
+        run: |
+          terraform -chdir=infra fmt -check -recursive
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+          python3 tests/infrastructure/test_static.py
+      - name: Scan Terraform and Docker configuration
+        run: >-
+          docker run --rm
+          --volume "${GITHUB_WORKSPACE}:/repo:ro"
+          "${TRIVY_IMAGE}"
+          config --exit-code 1 --severity HIGH,CRITICAL /repo/infra
+          && docker run --rm --volume "${GITHUB_WORKSPACE}:/repo:ro"
+          "${TRIVY_IMAGE}"
+          config --exit-code 1 --severity HIGH,CRITICAL /repo/Dockerfile
+
+  container:
+    name: Container build, runtime smoke, scan, and SBOM
+    needs: [workflow-hygiene, python]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build local image
+        run: docker build --tag secure-url-shortener:ci .
+      - name: Verify non-root and immutable runtime filesystem
+        run: |
+          test "$(docker inspect --format='{{.Config.User}}' secure-url-shortener:ci)" = "app"
+          docker run --rm --read-only --tmpfs /tmp:rw \
+            --entrypoint /bin/sh secure-url-shortener:ci \
+            -c 'test "$(id -u)" != "0"'
+      - name: Start read-only container for health smoke
+        run: |
+          # Liveness must not require a database, migration, or writable data path.
+          docker run --detach --rm --name secure-url-shortener-ci \
+            --publish 8000:8000 --read-only --tmpfs /tmp:rw \
+            --env DATABASE_URL=postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci \
+            --env ENVIRONMENT=ci \
+            --env OWNER_TOKENS=owner-ci:ci-owner-token \
+            --env ADMIN_TOKENS=admin:ci-admin-token \
+            secure-url-shortener:ci
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:8000/healthz && break
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8000/healthz
+      - name: Stop smoke container
+        if: always()
+        run: docker rm --force secure-url-shortener-ci 2>/dev/null || true
+      - name: Scan image for high and critical vulnerabilities
+        run: >-
+          docker run --rm --volume /var/run/docker.sock:/var/run/docker.sock
+          "${TRIVY_IMAGE}" image --exit-code 1 --severity HIGH,CRITICAL
+          --ignore-unfixed --no-progress secure-url-shortener:ci
+      - name: Generate CycloneDX SBOM
+        run: >-
+          docker run --rm --volume /var/run/docker.sock:/var/run/docker.sock
+          --volume "${GITHUB_WORKSPACE}:/repo"
+          "${TRIVY_IMAGE}" image --format cyclonedx
+          --output /repo/sbom.cdx.json secure-url-shortener:ci
+      - name: Confirm SBOM output
+        run: test -s sbom.cdx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: secure-url-shortener-sbom
+          path: sbom.cdx.json
+          if-no-files-found: error

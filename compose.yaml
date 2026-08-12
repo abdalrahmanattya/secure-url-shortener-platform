@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_DB: shortener
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: local-development-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d shortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://shortener:local-development-only@db:5432/shortener
+      OWNER_TOKENS: owner-demo:local-owner-token
+      ADMIN_TOKENS: admin:local-admin-token-change-me
+    ports: ["8000:8000"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build: .
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://shortener:local-development-only@db:5432/shortener
+      OWNER_TOKENS: owner-demo:local-owner-token
+      ADMIN_TOKENS: admin:local-admin-token-change-me
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  postgres-data:

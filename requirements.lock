@@ -1,0 +1,17 @@
+# Generated with Python 3.14 on 2026-08-12; refresh in a reviewed change.
+alembic==1.19.1
+asyncpg==0.31.0
+fastapi==0.141.1
+httpx==0.28.1
+jinja2==3.1.6
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+sqlalchemy==2.0.52
+structlog==25.5.0
+uvicorn[standard]==0.52.1
+aiosqlite==0.22.1
+pytest==8.4.2
+pytest-asyncio==0.26.0
+pytest-cov==6.2.1
+coverage==7.10.6
+ruff==0.16.2

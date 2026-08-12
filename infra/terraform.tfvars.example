@@ -1,0 +1,12 @@
+aws_region                 = "eu-west-1"
+project_name               = "secure-url-shortener"
+environment                = "demo"
+availability_zones         = ["eu-west-1a", "eu-west-1b"]
+container_image_digest     = "123456789012.dkr.ecr.eu-west-1.amazonaws.com/secure-url-shortener-demo@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+certificate_arn            = "arn:aws:acm:eu-west-1:123456789012:certificate/REPLACE_ME"
+github_repository          = "abdalrahmanattya/secure-url-shortener-platform"
+github_ref                 = "refs/heads/main"
+github_environment         = "demo"
+enable_nat_gateway         = true
+enable_deletion_protection = true
+allow_demo_destroy         = false

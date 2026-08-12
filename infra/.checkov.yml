@@ -1,0 +1,8 @@
+compact: true
+quiet: true
+framework:
+  - terraform
+
+# Any skipped check must be reviewed against the destroy-safety ADR before apply.
+skip-check:
+  - CKV_AWS_157

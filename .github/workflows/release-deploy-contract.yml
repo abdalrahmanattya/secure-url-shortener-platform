@@ -1,0 +1,57 @@
+name: Future release and deploy contract
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected GitHub environment to target
+        required: true
+        type: environment
+      image_digest:
+        description: Immutable ECR image@sha256 digest to release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  contract-only:
+    name: Validate future release inputs (no AWS execution)
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Validate immutable image contract
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          if [[ ! "${IMAGE_DIGEST}" =~ ^[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "image_digest must be repository@sha256:<64 lowercase hex>" >&2
+            exit 1
+          fi
+      - name: Validate protected deployment variables
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          for required in AWS_ROLE_ARN ECS_CLUSTER ECS_SERVICE ECR_REPOSITORY; do
+            if [[ -z "${!required}" ]]; then
+              echo "Missing protected environment variable: ${required}" >&2
+              exit 1
+            fi
+          done
+          [[ "${AWS_ROLE_ARN}" == arn:aws:iam::*:role/* ]] || {
+            echo "AWS_ROLE_ARN must be an IAM role ARN" >&2
+            exit 1
+          }
+      - name: Record safe contract boundary
+        run: |
+          echo "Inputs and protected environment are valid."
+          echo "Deployment is intentionally not implemented in this contract-only workflow."
+          echo "A future change must add reviewed OIDC role assumption and an immutable ECS update."

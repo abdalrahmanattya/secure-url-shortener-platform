@@ -1,0 +1,294 @@
+openapi: 3.1.0
+info:
+  title: Secure URL Shortener API
+  version: 0.1.0
+  description: >-
+    Credential-free local-first contract for an original URL-shortening service.
+    The public redirect path is deliberately separate from the management API.
+servers:
+  - url: http://localhost:8000
+    description: Local Compose endpoint
+tags:
+  - name: service
+  - name: links
+paths:
+  /healthz:
+    get:
+      tags: [service]
+      operationId: health
+      summary: Process health
+      security: []
+      responses:
+        '200':
+          description: Process is running.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+        '503':
+          description: Process is unable to serve requests.
+  /readyz:
+    get:
+      tags: [service]
+      operationId: readiness
+      summary: Dependency readiness
+      security: []
+      responses:
+        '200':
+          description: Application and required local data dependency are ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadinessResponse' }
+        '503':
+          description: A required dependency is unavailable.
+  /internal/metrics:
+    get:
+      tags: [service]
+      operationId: metrics
+      summary: Authenticated process counters
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Plain-text process counters for local diagnosis.
+          content:
+            text/plain:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+  /v1/links:
+    post:
+      tags: [links]
+      operationId: createLink
+      summary: Create a short link
+      description: >-
+        Creates an owned link. The caller identity comes from the bearer token;
+        the service is not an identity provider. Destination validation accepts
+        HTTPS and HTTP only and rejects loopback, link-local, private, and
+        unspecified IP destinations after hostname resolution.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLinkRequest' }
+      responses:
+        '201':
+          description: Link created.
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Link' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/links/{code}:
+    parameters:
+      - $ref: '#/components/parameters/Code'
+    get:
+      tags: [links]
+      operationId: getLink
+      summary: Read link metadata
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Link metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Link' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+    patch:
+      tags: [links]
+      operationId: updateLink
+      summary: Update or disable link metadata
+      description: >-
+        Only the owner or an explicitly authorized administrator may update a
+        link. Setting enabled=false disables redirects without deleting audit
+        metadata. Expiry may be shortened but not extended after expiry.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLinkRequest' }
+      responses:
+        '200':
+          description: Link updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Link' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+    delete:
+      tags: [links]
+      operationId: deleteLink
+      summary: Soft-delete a link
+      description: >-
+        Deletion is a tombstone operation. The code is never reused, the public
+        redirect returns 410, and minimum audit metadata is retained according
+        to the configured retention policy.
+      security:
+        - bearerAuth: []
+      responses:
+        '204': { description: Link tombstoned; no response body. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+  /r/{code}:
+    get:
+      tags: [links]
+      operationId: resolveLink
+      summary: Resolve a short code
+      description: >-
+        Public resolution performs no authentication challenge. It returns a
+        302 response with a Location header and an empty body. Clients should
+        not be redirected to a destination that fails validation. The service
+        does not follow the destination during resolution.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Code'
+      responses:
+        '302':
+          description: Temporary redirect to the validated destination.
+          headers:
+            Location:
+              required: true
+              schema: { type: string, format: uri }
+            Cache-Control:
+              schema: { type: string, example: no-store }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Link is expired, disabled, or tombstoned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: >-
+        Opaque short-lived local/demo token or cloud identity token. The API
+        validates identity and ownership; it does not issue tokens.
+  parameters:
+    Code:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{6,32}$'
+  schemas:
+    CreateLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [destination]
+      properties:
+        destination:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: HTTP(S) destination; private and local network targets are rejected.
+        code:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{6,32}$'
+          description: Optional requested code; server-generated when omitted.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional UTC expiry; must be in the future at creation.
+    UpdateLinkRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        destination:
+          type: string
+          format: uri
+          maxLength: 2048
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        enabled:
+          type: boolean
+    Link:
+      type: object
+      required: [code, shortUrl, destination, createdAt, enabled, status]
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9_-]{6,32}$' }
+        shortUrl: { type: string, format: uri-reference }
+        destination: { type: string, format: uri }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        enabled: { type: boolean }
+        status:
+          type: string
+          enum: [active, expired, disabled, deleted]
+        ownerId:
+          type: string
+          description: Stable pseudonymous owner identifier; never an email address.
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    ReadinessResponse:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status: { type: string, enum: [ready] }
+        dependencies:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, unavailable]
+    ErrorResponse:
+      type: object
+      required: [error, message, requestId]
+      properties:
+        error: { type: string, pattern: '^[a-z0-9_]+$' }
+        message: { type: string, maxLength: 300 }
+        requestId: { type: string, maxLength: 100 }
+  responses:
+    BadRequest:
+      description: Malformed request or unsupported field.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Unauthenticated:
+      description: Missing or invalid bearer token.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Forbidden:
+      description: Authenticated caller does not own the link and is not an administrator.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFound:
+      description: Code does not exist; do not reveal whether another tombstone existed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Gone:
+      description: Link is expired, disabled, or deleted.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Conflict:
+      description: Requested code is already allocated or update conflicts with its state.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    UnprocessableEntity:
+      description: Destination or expiry fails domain validation.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    RateLimited:
+      description: Caller or destination has exceeded the abuse-control budget.
+      headers:
+        Retry-After: { schema: { type: integer, minimum: 1 } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
