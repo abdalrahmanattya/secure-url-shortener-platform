@@ -42,23 +42,23 @@ IP addresses or user agents.
 
 ```mermaid
 flowchart LR
-    Client[Browser or curl] --> API[FastAPI service]
-    API --> Management[Management routes\nGET/POST/PATCH/DELETE]
-    Management --> Auth[Owner/admin auth + rate limit]
-    Auth --> Validate[URL/DNS validation]
-    Validate --> Store[(PostgreSQL 16)]
-    API --> Resolver[Resolver route\nGET /r/{code}]
-    Resolver --> ResolveLimit[Resolver rate limit]
-    ResolveLimit --> Lookup[PostgreSQL code lookup]
+    Client["Browser or curl"] --> API["FastAPI service"]
+    API --> Management["Management routes<br/>GET/POST/PATCH/DELETE"]
+    Management --> Auth["Owner/admin auth + rate limit"]
+    Auth --> Validate["URL/DNS validation"]
+    Validate --> Store[("PostgreSQL 16")]
+    API --> Resolver["Resolver route<br/>GET /r/{code}"]
+    Resolver --> ResolveLimit["Resolver rate limit"]
+    ResolveLimit --> Lookup["PostgreSQL code lookup"]
     Lookup --> Store
-    Store --> Decision{Lifecycle decision}
-    Decision -->|active| Click[Click metadata update]
+    Store --> Decision{"Lifecycle decision"}
+    Decision -->|active| Click["Click metadata update"]
     Click --> Store
-    Store --> Redirect[302 + Location + no-store]
-    Decision -->|unknown| NotFound[404]
-    Decision -->|disabled, expired, deleted| Gone[410]
-    Migrate[Alembic migrate service] --> Store
-    Seed[Local seed helper] --> Store
+    Store --> Redirect["302 + Location + no-store"]
+    Decision -->|unknown| NotFound["404"]
+    Decision -->|disabled, expired, deleted| Gone["410"]
+    Migrate["Alembic migrate service"] --> Store
+    Seed["Local seed helper"] --> Store
     API --> Health["/healthz · /readyz · /internal/metrics"]
 ```
 
@@ -155,33 +155,33 @@ endpoints, an S3 gateway endpoint, and VPC DNS support private service access.
 
 ```mermaid
 flowchart TB
-    subgraph Internet[Internet and optional DNS]
-        User[Internet client] --> DNS[Optional Route 53 DNS]
+    subgraph Internet["Internet and optional DNS"]
+        User["Internet client"] --> DNS["Optional Route 53 DNS"]
     end
-    subgraph VPC[VPC across AZ-a and AZ-b]
-        subgraph Edge[Public subnets]
-            ALB[Public ALB\nHTTP redirects to HTTPS]
+    subgraph VPC["VPC across AZ-a and AZ-b"]
+        subgraph Edge["Public subnets"]
+            ALB["Public ALB<br/>HTTP redirects to HTTPS"]
         end
-        subgraph Private[Private subnets]
-            ECS[ECS Service\ndesired count 2; placement eligible in both private subnets]
+        subgraph Private["Private subnets"]
+            ECS["ECS Service<br/>desired count 2; placement eligible in both private subnets"]
         end
-        subgraph Data[Isolated subnets]
-            Aurora[(Aurora PostgreSQL Serverless v2)]
+        subgraph Data["Isolated subnets"]
+            Aurora[("Aurora PostgreSQL Serverless v2")]
         end
-        VPCE[VPC interface endpoints:\nECR API/DKR, Logs, Secrets, KMS, STS]
-        S3[S3 gateway endpoint]
-        DNSVPC[VPC DNS]
-        NAT[NAT disabled by default; opt-in target]
+        VPCE["VPC interface endpoints:<br/>ECR API/DKR, Logs, Secrets, KMS, STS"]
+        S3["S3 gateway endpoint"]
+        DNSVPC["VPC DNS"]
+        NAT["NAT disabled by default; opt-in target"]
     end
-    WAF[AWS WAF] -. protects .-> ALB
-    ACM[ACM certificate] -. attached to HTTPS listener .-> ALB
+    WAF["AWS WAF"] -. protects .-> ALB
+    ACM["ACM certificate"] -. attached to HTTPS listener .-> ALB
     DNS --> ALB
     ALB -->|SG: TCP 8000| ECS
     ECS -->|SG: TCP 5432| Aurora
-    Secrets[Secrets Manager JSON keys] -->|injected into tasks| ECS
-    ECR[Immutable ECR image digest] --> ECS
-    ECS --> CW[CloudWatch logs metrics alarms]
-    KMS[KMS key] -. encrypts selected Secrets Manager data .-> Secrets
+    Secrets["Secrets Manager JSON keys"] -->|injected into tasks| ECS
+    ECR["Immutable ECR image digest"] --> ECS
+    ECS --> CW["CloudWatch logs metrics alarms"]
+    KMS["KMS key"] -. encrypts selected Secrets Manager data .-> Secrets
     KMS -. encrypts selected CloudWatch data .-> CW
     ECS --> VPCE
     ECS --> S3
@@ -200,15 +200,15 @@ or AWS smoke test has occurred.
 
 ```mermaid
 flowchart LR
-    Dev[Developer push or pull request] --> CI[Current GitHub Actions CI]
-    CI --> Quality[Format, lint, tests, coverage]
-    CI --> Integration[PostgreSQL migration/readiness]
-    CI --> Policy[Terraform policy and config scan]
-    CI --> Image[Build, runtime smoke, Trivy scan, SBOM upload]
-    Manual[Current manual contract validation:\nimmutable digest + protected variables] --> Review[Separate approval boundary]
-    FutureOIDC[Future OIDC assume-role] -. unimplemented .-> Publish[Future image publish/promote]
-    Publish -. unimplemented .-> AWS[AWS target: ECR / ECS / ALB]
-    Quality --> Evidence[Evidence retained in CI]
+    Dev["Developer push or pull request"] --> CI["Current GitHub Actions CI"]
+    CI --> Quality["Format, lint, tests, coverage"]
+    CI --> Integration["PostgreSQL migration/readiness"]
+    CI --> Policy["Terraform policy and config scan"]
+    CI --> Image["Build, runtime smoke, Trivy scan, SBOM upload"]
+    Manual["Current manual contract validation:<br/>immutable digest + protected variables"] --> Review["Separate approval boundary"]
+    FutureOIDC["Future OIDC assume-role"] -. unimplemented .-> Publish["Future image publish/promote"]
+    Publish -. unimplemented .-> AWS["AWS target: ECR / ECS / ALB"]
+    Quality --> Evidence["Evidence retained in CI"]
     Integration --> Evidence
     Policy --> Evidence
     Image --> Evidence
