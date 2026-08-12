@@ -5,7 +5,7 @@ application boundaries and a reviewable AWS delivery design. It is intended
 for cloud/platform engineers, security reviewers, and recruiters assessing
 architecture, implementation discipline, and operational thinking.
 
-**Status:** public v0.1.0 candidate. The local service, Compose/PostgreSQL
+**Status:** public v0.1.0 released. The local service, Compose/PostgreSQL
 lifecycle, Terraform validation, pinned multi-platform images, and CI evidence
 are complete. AWS has not been applied, no public endpoint exists, and no
 production data or credentials are present.
@@ -221,7 +221,7 @@ flows; no protected deployment job currently exists.
 
 ## Evidence and limitations
 
-Hosted CI run [31583275274](https://github.com/abdalrahmanattya/secure-url-shortener-platform/actions/runs/31583275274)
+Hosted CI run [31584503885](https://github.com/abdalrahmanattya/secure-url-shortener-platform/actions/runs/31584503885)
 passed all five jobs: Python quality/contract tests, PostgreSQL integration,
 workflow hygiene/Gitleaks, Terraform policy/Trivy configuration scan, and
 container build/runtime/vulnerability scan/SBOM upload. Local evidence also

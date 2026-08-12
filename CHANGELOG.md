@@ -1,8 +1,10 @@
 # Changelog
 
-## [0.1.0] — Unreleased candidate
+## [0.1.0] — 2026-08-12
 
-This is a local candidate release, not a deployed release.
+Public portfolio release. The local service and non-applied AWS target design
+are documented and validated; no AWS deployment or production endpoint is
+claimed.
 
 ### Added
 
@@ -29,12 +31,11 @@ This is a local candidate release, not a deployed release.
 - Infrastructure formatting, structural checks, and provider-backed Terraform
   validation passed locally.
 - No AWS resources, public endpoint, production data, or cloud credentials are
-  part of this candidate release.
+  part of this release.
 
-### Next gate
+### Verification boundary
 
-Hosted GitHub Actions run `31583275274` verified the five CI jobs, including
+Hosted GitHub Actions run `31584503885` verified the five CI jobs, including
 PostgreSQL integration, Gitleaks, Terraform/Trivy checks, container scanning,
-and SBOM upload. Exercise local recovery as useful operational evidence, then
-complete the separately approved cloud proof before calling the service
-production-ready.
+and SBOM upload. Cloud proof, uptime, performance, cost, and production
+readiness remain explicitly unclaimed until a separately approved deployment.
