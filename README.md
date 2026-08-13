@@ -153,41 +153,9 @@ and connects to isolated Aurora PostgreSQL. CloudWatch receives logs, metrics,
 alarms, and dashboards; KMS protects selected data and logs. VPC interface
 endpoints, an S3 gateway endpoint, and VPC DNS support private service access.
 
-```mermaid
-flowchart TB
-    subgraph Internet["Internet and optional DNS"]
-        User["Internet client"] --> DNS["Optional Route 53 DNS"]
-    end
-    subgraph VPC["VPC across AZ-a and AZ-b"]
-        subgraph Edge["Public subnets"]
-            ALB["Public ALB<br/>HTTP redirects to HTTPS"]
-        end
-        subgraph Private["Private subnets"]
-            ECS["ECS Service<br/>desired count 2; placement eligible in both private subnets"]
-        end
-        subgraph Data["Isolated subnets"]
-            Aurora[("Aurora PostgreSQL Serverless v2")]
-        end
-        VPCE["VPC interface endpoints:<br/>ECR API/DKR, Logs, Secrets, KMS, STS"]
-        S3["S3 gateway endpoint"]
-        DNSVPC["VPC DNS"]
-        NAT["NAT disabled by default; opt-in target"]
-    end
-    WAF["AWS WAF"] -. protects .-> ALB
-    ACM["ACM certificate"] -. attached to HTTPS listener .-> ALB
-    DNS --> ALB
-    ALB -->|SG: TCP 8000| ECS
-    ECS -->|SG: TCP 5432| Aurora
-    Secrets["Secrets Manager JSON keys"] -->|injected into tasks| ECS
-    ECR["Immutable ECR image digest"] --> ECS
-    ECS --> CW["CloudWatch logs metrics alarms"]
-    KMS["KMS key"] -. encrypts selected Secrets Manager data .-> Secrets
-    KMS -. encrypts selected CloudWatch data .-> CW
-    ECS --> VPCE
-    ECS --> S3
-    ECS --> DNSVPC
-    Private -. optional egress .-> NAT
-```
+![AWS target topology for the secure URL shortener](docs/diagrams/aws-target.svg)
+
+Maintainable diagram source: [docs/diagrams/aws-target.mmd](docs/diagrams/aws-target.mmd).
 
 Security groups express ALB-to-ECS, ECS-to-Aurora, and ECS-to-endpoint
 boundaries. The ECS service has desired count 2 and can place tasks across the

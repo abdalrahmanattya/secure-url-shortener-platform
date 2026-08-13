@@ -1,0 +1,46 @@
+%%{init: {"theme":"base","themeVariables":{"background":"#0a0f17","primaryColor":"#163b4a","primaryTextColor":"#e6edf5","primaryBorderColor":"#38e2c8","lineColor":"#a9b8c9","secondaryColor":"#102d45","tertiaryColor":"#0d1d24","clusterBkg":"#0d1d24","clusterBorder":"#315a66","fontFamily":"Arial"}}}%%
+%% AWS target only: Terraform describes this topology; no cloud deployment is claimed.
+flowchart TB
+    client[Internet client] --> dns[Optional Route 53 DNS]
+
+    subgraph vpc[VPC across two Availability Zones]
+        subgraph public[Public subnets]
+            alb[Public ALB\nHTTP redirects to HTTPS]
+        end
+        subgraph private[Private subnets]
+            ecs[ECS Fargate service\ndesired count 2]
+        end
+        subgraph isolated[Isolated subnets]
+            aurora[(Aurora PostgreSQL\nServerless v2)]
+        end
+        endpoints[VPC interface endpoints\nECR · Logs · Secrets · KMS · STS]
+        s3[S3 gateway endpoint]
+        vpcdns[VPC DNS]
+        nat[NAT disabled by default\noptional target]
+    end
+
+    dns --> alb
+    alb -->|security group: TCP 8000| ecs
+    ecs -->|security group: TCP 5432| aurora
+    waf[AWS WAF] -. protects .-> alb
+    acm[ACM certificate] -. HTTPS listener .-> alb
+    secrets[Secrets Manager\nDATABASE_URL · OWNER_TOKENS · ADMIN_TOKENS] -. task injection .-> ecs
+    ecr[Immutable ECR image digest] -. task image .-> ecs
+    ecs --> cloudwatch[CloudWatch\nlogs · metrics · alarms · dashboards]
+    kms[KMS key] -. selected encryption .-> secrets
+    kms -. selected encryption .-> cloudwatch
+    ecs --> endpoints
+    ecs --> s3
+    ecs --> vpcdns
+    private -. optional egress .-> nat
+
+    classDef client fill:#1c2732,stroke:#a9b8c9,color:#e6edf5;
+    classDef edge fill:#102d45,stroke:#5aa9ff,color:#e6edf5;
+    classDef app fill:#163b4a,stroke:#38e2c8,color:#e6edf5;
+    classDef data fill:#3a263e,stroke:#e09cff,color:#e6edf5;
+    classDef control fill:#292f3f,stroke:#f2c879,color:#e6edf5;
+    class client client;
+    class dns,alb edge;
+    class ecs app;
+    class aurora data;
+    class waf,acm,secrets,ecr,cloudwatch,kms,endpoints,s3,vpcdns,nat control;

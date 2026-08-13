@@ -30,7 +30,7 @@ design targets until measured in an approved environment.
 | Resource exhaustion | URL limits plus local API/UI creation, failed-auth, and resolution limits; WAF is a target control | Exact budgets and WAF rules remain unmeasured. |
 | Malicious destination availability attack | Resolver does not follow destination; bounded response | Downstream victim impact cannot be eliminated by a shortener. |
 | Database compromise | Private subnets, encryption, Secrets Manager, least-privilege roles | Cloud backup/restore and key policy require approved verification. |
-| Supply-chain compromise | Locked runtime dependencies, multi-platform pinned image digests, non-root image, local Trivy scan with 0 HIGH/CRITICAL, and hosted SBOM upload verified in CI run `31583275274` | Image provenance/signing and ongoing dependency updates require continued review. |
+| Supply-chain compromise | Locked runtime dependencies, multi-platform pinned image digests, non-root image, local Trivy scan with 0 HIGH/CRITICAL, and hosted SBOM upload verified in CI run `31584503885` | Image provenance/signing and ongoing dependency updates require continued review. |
 | CI/CD deployment abuse | Environment-only OIDC subject and immutable-image design | Trust behavior still needs approved GitHub/AWS verification. |
 | Delete/expiry resurrection | Tombstone state and no code reuse; 410 semantics | Retention and purge schedule need an explicit operational decision. |
 
