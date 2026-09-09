@@ -11,7 +11,10 @@ RUN python -m pip install --no-cache-dir --target /opt/runtime --no-deps --requi
 FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/runtime
 WORKDIR /app
-RUN addgroup --system app && adduser --system --ingroup app app \
+RUN apt-get update \
+    && apt-get upgrade --yes \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system app && adduser --system --ingroup app app \
     && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/lib/python3.13/site-packages/setuptools* \
     /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.13
 COPY --from=builder /opt/runtime /opt/runtime
