@@ -6,7 +6,7 @@ Build a small URL-shortening service that makes cloud-platform engineering
 judgment visible: safe destination handling, explicit link lifecycle, bounded
 management access, disposable local operations, and a reviewable AWS target.
 
-The product is a portfolio case study, not a claim of a running SaaS platform.
+The product is a bounded reference service, not a claim of a running SaaS platform.
 
 ## User outcomes
 
@@ -64,7 +64,7 @@ return `200`, deletion returns `204` and creates a tombstone, and unknown,
 disabled, expired, or deleted links return the documented `404`/`410` states.
 Public resolution returns `302` with `Cache-Control: no-store`; abuse limits
 return `429` with `Retry-After`. See
-[`docs/portfolio/api-surface.md`](portfolio/api-surface.md) and
+[`docs/reference/api-surface.md`](reference/api-surface.md) and
 [`docs/evidence/evidence-matrix.md`](evidence/evidence-matrix.md) for the
 evidence boundary.
 
