@@ -1,6 +1,6 @@
 # API surface and contract boundary
 
-This is the recruiter-facing summary of the executable local service. The
+This is the reader-facing summary of the executable local service. The
 normative schemas and response descriptions are in
 [`docs/api/openapi.yaml`](../api/openapi.yaml). The AWS design is not deployed.
 

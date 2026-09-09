@@ -2,7 +2,7 @@
 
 ## [0.1.0] — 2026-08-12
 
-Public portfolio release. The local service and non-applied AWS target design
+Public product release. The local service and non-applied AWS target design
 are documented and validated; no AWS deployment or production endpoint is
 claimed.
 

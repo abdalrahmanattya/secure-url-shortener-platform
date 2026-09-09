@@ -1,14 +1,25 @@
+<!-- reader-first-readme:v1 -->
+
 # Secure URL Shortener Platform
 
-An original, local-first URL-shortening service that demonstrates secure
-application boundaries and a reviewable AWS delivery design. It is intended
-for cloud/platform engineers, security reviewers, and recruiters assessing
-architecture, implementation discipline, and operational thinking.
+This service turns a long web address into a short, memorable link while giving
+its owner control over when that link works. It is useful for teams that need
+simple redirects without allowing the service to browse private networks,
+expose management actions publicly, or quietly reuse deleted codes.
 
-**Status:** public v0.1.0 released. The local service, Compose/PostgreSQL
-lifecycle, Terraform validation, pinned multi-platform images, and CI evidence
-are complete. AWS has not been applied, no public endpoint exists, and no
-production data or credentials are present.
+The complete product runs locally with PostgreSQL. The repository also defines
+an independent AWS environment that an operator can deploy in their own
+account; that cloud design has been validated as code but not run on AWS.
+
+## The 30-second overview
+
+1. An authorized owner submits a normal `http` or `https` destination.
+2. The service checks that the address is public and safe to store.
+3. It returns a short code such as `docs-1`.
+4. A visitor opens `/r/docs-1` and receives a standard web redirect.
+5. The owner can later expire, pause, restore, or permanently retire the link.
+6. Health, readiness, metrics, and structured logs help an operator understand
+   whether the service is working.
 
 ## What the service does
 
@@ -21,6 +32,20 @@ The lifecycle is deliberate: unknown codes return `404`; disabled, expired,
 and deleted codes return `410`; deleted codes remain tombstoned and can never
 be reused. Click count and last-access time are recorded without storing client
 IP addresses or user agents.
+
+## A representative user journey
+
+Suppose a documentation team wants a short link for a release guide. An owner
+submits the guide's public address using a management token. The service
+resolves the address before saving it and rejects destinations that point to a
+private machine, cloud metadata endpoint, or other non-public network. It
+stores the approved destination and returns the requested code.
+
+A reader can then open that code without signing in. The service looks up its
+state, records only a click count and time, and returns the destination to the
+reader's browser. It never downloads the destination itself. If the owner later
+disables, expires, or deletes the link, visitors receive `410 Gone`; deletion
+leaves a permanent marker so the same code cannot be reassigned unexpectedly.
 
 ## Implemented capabilities
 
@@ -38,7 +63,7 @@ IP addresses or user agents.
 - `/healthz`, `/readyz`, authenticated `/internal/metrics`, and a non-root,
   read-only-capable container.
 
-## Local architecture and flows
+## System architecture and flows
 
 ```mermaid
 flowchart LR
@@ -67,7 +92,12 @@ optional alias, writes the link, and returns `201` with a `Location` header.
 Resolve flow: the API looks up the code, applies lifecycle rules, increments
 safe click metadata, and returns `302` without contacting the destination.
 
-## Run locally
+In plain language, management requests pass through identity, rate-limit, and
+destination-safety checks before PostgreSQL stores a link. Public visitors use
+only the resolver path, which reads lifecycle state and either redirects or
+returns a safe `404`/`410` response.
+
+## Running the project locally: exact deployment method
 
 Prerequisites: Docker Desktop and Python 3.13 or newer.
 
@@ -91,7 +121,8 @@ Useful commands:
 docker compose logs -f app
 docker compose exec -T app python scripts/seed.py
 python -m pytest -q
-python -m pytest --cov=src/secure_shortener --cov-report=term-missing --cov-fail-under=75
+coverage run -m pytest -q
+coverage report --show-missing --fail-under=75
 docker compose down
 ```
 
@@ -142,9 +173,9 @@ separate local administrator fixture. These values are for disposable local
 development only. Configuration names and environment boundaries are described
 in [docs/security.md](docs/security.md).
 
-## AWS target design (not applied)
+## AWS cloud resources
 
-Terraform describes a target, not a deployed environment. The intended request
+Terraform describes an independently deployable environment. The request
 path is optional DNS to a public ALB with WAF associated to the ALB and an ACM
 certificate attached to its HTTPS listener, then to private ECS tasks across
 two Availability Zones. ECS reads application
@@ -153,16 +184,30 @@ and connects to isolated Aurora PostgreSQL. CloudWatch receives logs, metrics,
 alarms, and dashboards; KMS protects selected data and logs. VPC interface
 endpoints, an S3 gateway endpoint, and VPC DNS support private service access.
 
-![AWS target topology for the secure URL shortener](docs/diagrams/aws-target.svg)
+![Planned AWS service architecture for the secure URL shortener using official AWS service icons](docs/diagrams/aws-services.svg)
 
-Maintainable diagram source: [docs/diagrams/aws-target.mmd](docs/diagrams/aws-target.mmd).
+The diagram uses the [official AWS Architecture Icons](https://aws.amazon.com/architecture/icons/).
+The Application Load Balancer (ALB) is the public HTTPS entry point. AWS WAF
+filters common web attacks before private containers on Elastic Container
+Service (ECS) handle a request. Aurora PostgreSQL stores links in isolated
+database subnets. Elastic Container Registry (ECR) supplies the reviewed image,
+Secrets Manager supplies runtime configuration, Key Management Service (KMS)
+protects selected data, and CloudWatch collects operational signals.
 
 Security groups express ALB-to-ECS, ECS-to-Aurora, and ECS-to-endpoint
 boundaries. The ECS service has desired count 2 and can place tasks across the
 two private AZ subnets; this does not guarantee one task in each AZ. Tasks and
 Aurora are private; only the ALB is internet-facing. No
 Terraform apply, ACM certificate provisioning, image publication, DNS change,
-or AWS smoke test has occurred.
+or AWS smoke test has occurred. The detailed network topology remains in the
+[architecture documentation](docs/architecture.md).
+
+### Deployment status
+
+The planned AWS resources are not deployed. The exact runnable deployment in
+this release is the Docker Compose environment above; a real AWS rollout still
+requires implementing protected image publication and short-lived deployment
+identity, then reviewing and applying the Terraform in an approved account.
 
 ## Delivery and identity boundary
 
@@ -187,7 +232,7 @@ uploads an SBOM. Manual contract validation is separate. OIDC assume-role,
 image publication/promotion, and AWS deployment are future unimplemented
 flows; no protected deployment job currently exists.
 
-## Evidence and limitations
+## What was tested
 
 Hosted CI run [31584503885](https://github.com/abdalrahmanattya/secure-url-shortener-platform/actions/runs/31584503885)
 passed all five jobs: Python quality/contract tests, PostgreSQL integration,
@@ -196,14 +241,28 @@ container build/runtime/vulnerability scan/SBOM upload. Local evidence also
 records `15 passed, 2 skipped`, `77%` coverage, Compose seed/lifecycle success,
 Terraform validation, and zero HIGH/CRITICAL runtime vulnerabilities.
 
+## Important limitations
+
 This project does not claim uptime, throughput, cost, production readiness,
 content moderation, malware scanning, enterprise identity, or anonymous abuse
-elimination. Distributed rate limiting, WAF tuning, backup/restore exercises,
+elimination. Distributed rate limiting, WAF tuning, backup/restore drills,
 cloud identity wiring, and AWS behavior require an approved measured
 environment. See the [evidence matrix](docs/evidence/evidence-matrix.md) and
 [threat model](docs/threat-model.md).
 
-## Project map
+## Technology guide in plain English
+
+| Technology | Its job in this project |
+|---|---|
+| FastAPI | Receives browser and API requests and applies the link rules. |
+| PostgreSQL | Stores links, ownership, lifecycle state, and click metadata. |
+| SQLAlchemy and Alembic | Connect application code to PostgreSQL and apply versioned database changes. |
+| Docker Compose | Starts the service, migration task, and disposable local database together. |
+| Terraform | Describes the reviewable AWS environment; validation does not create resources. |
+| GitHub Actions | Repeats tests, policy checks, image builds, and security scans after changes. |
+| Trivy | Checks configuration and container packages for known security problems. |
+
+## Repository map
 
 ```text
 src/secure_shortener/  FastAPI application, validation, persistence, logging

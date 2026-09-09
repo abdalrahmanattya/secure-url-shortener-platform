@@ -7,7 +7,7 @@
 
 The historical YOURLS repositories show useful hosting and infrastructure
 lessons but include third-party application material and credential risks. A
-portfolio successor should demonstrate the same class of platform problem
+successor service should demonstrate the same class of platform problem
 without presenting reused software as original work.
 
 ## Decision
